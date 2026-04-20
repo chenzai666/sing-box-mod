@@ -75,6 +75,8 @@ is_pkg="wget tar bash"
 # Alpine: gcompat provides glibc compatibility for prebuilt binaries
 [[ $cmd =~ apk ]] && is_pkg="$is_pkg gcompat jq"
 is_config_json=$is_core_dir/config.json
+# local cache
+is_core_cached=
 tmp_var_lists=(
     tmpcore
     tmpsh
@@ -99,6 +101,18 @@ done
 # load bash script.
 load() {
     . $is_sh_dir/src/$1
+}
+
+# check local cache
+check_local_cache() {
+    # check if sing-box binary already exists
+    if [[ -f $is_core_bin ]] && [[ -x $is_core_bin ]]; then
+        local cached_ver=$($is_core_bin version 2>/dev/null | head -n1 | grep -E -o 'v[0-9.]+' | head -1)
+        if [[ $cached_ver ]]; then
+            is_core_cached=$cached_ver
+            msg warn "检测到本地 sing-box: ${yellow}${is_core_cached}${none}"
+        fi
+    fi
 }
 
 # wget add --no-check-certificate
@@ -175,6 +189,11 @@ download() {
         name=$is_core_name
         tmpfile=$tmpcore
         is_ok=$is_core_ok
+        # check if local cached version matches the target version
+        if [[ $is_core_cached ]] && [[ $is_core_ver == $is_core_cached ]]; then
+            msg warn "本地缓存版本 ${yellow}${is_core_cached}${none} 已是最新, 跳过下载"
+            return 0
+        fi
         ;;
     sh)
         link=https://github.com/${is_sh_repo}/releases/latest/download/code.tar.gz
@@ -219,6 +238,11 @@ check_status() {
 
     # download file status
     if [[ $is_wget ]]; then
+        # check if using local cache (core already exists)
+        if [[ $is_core_cached ]] && [[ -f $is_core_bin ]]; then
+            >$is_core_ok
+            msg ok "使用本地缓存 ${is_core_name} ${is_core_cached}"
+        fi
         [[ ! -f $is_core_ok ]] && {
             msg err "下载 ${is_core_name} 失败"
             is_fail=1
@@ -331,6 +355,9 @@ main() {
     msg warn "开始安装..."
     [[ $is_core_ver ]] && msg warn "${is_core_name} 版本: ${yellow}$is_core_ver${none}"
     [[ $proxy ]] && msg warn "使用代理: ${yellow}$proxy${none}"
+
+    # check local cache
+    check_local_cache
     # create tmpdir
     mkdir -p $tmpdir
     # if is_core_file, copy file
@@ -416,6 +443,9 @@ main() {
     # copy core file or unzip core zip file
     if [[ $is_core_file ]]; then
         cp -rf $tmpdir/testzip/* $is_core_dir/bin
+    elif [[ $is_core_cached ]] && [[ -f $is_core_bin ]]; then
+        # use local cached binary
+        msg ok "使用本地缓存 ${is_core_name} ${is_core_cached}"
     else
         tar zxf $is_core_ok --strip-components 1 -C $is_core_dir/bin
     fi
