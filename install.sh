@@ -117,10 +117,16 @@ check_local_cache() {
     fi
 }
 
-# wget add --no-check-certificate
+# wget add --no-check-certificate, with timeout
 _wget() {
     [[ $proxy ]] && export https_proxy=$proxy
-    wget --no-check-certificate $*
+    wget --no-check-certificate --timeout=60 --tries=2 $*
+}
+
+# curl with timeout
+_curl() {
+    [[ $proxy ]] && export https_proxy=$proxy
+    curl -fsSL --max-time 60 --retry 2 $*
 }
 
 # print a mesage
@@ -186,11 +192,6 @@ install_pkg() {
 download() {
     case $1 in
     core)
-        [[ ! $is_core_ver ]] && {
-            is_core_ver=$(_wget -qO- "https://api.github.com/repos/${is_core_repo}/releases/latest?v=$RANDOM" | grep tag_name | grep -E -o 'v([0-9.]+)')
-            [[ ! $is_core_ver ]] && is_core_ver=$(_wget -qO- "${gh_proxy}https://api.github.com/repos/${is_core_repo}/releases/latest?v=$RANDOM" | grep tag_name | grep -E -o 'v([0-9.]+)')
-        }
-        [[ $is_core_ver ]] && link="https://github.com/${is_core_repo}/releases/download/${is_core_ver}/${is_core}-${is_core_ver:1}-linux-${is_arch}.tar.gz"
         name=$is_core_name
         tmpfile=$tmpcore
         is_ok=$is_core_ok
@@ -199,6 +200,44 @@ download() {
             msg warn "本地缓存版本 ${yellow}${is_core_cached}${none} 已是最新, 跳过下载"
             return 0
         fi
+        [[ ! $is_core_ver ]] && {
+            is_core_ver=$(_wget -qO- "https://api.github.com/repos/${is_core_repo}/releases/latest?v=$RANDOM" | grep tag_name | grep -E -o 'v([0-9.]+)')
+            [[ ! $is_core_ver ]] && is_core_ver=$(_wget -qO- "${gh_proxy}https://api.github.com/repos/${is_core_repo}/releases/latest?v=$RANDOM" | grep tag_name | grep -E -o 'v([0-9.]+)')
+        }
+        [[ $is_core_ver ]] && link="https://github.com/${is_core_repo}/releases/download/${is_core_ver}/${is_core}-${is_core_ver:1}-linux-${is_arch}.tar.gz"
+        # try GitHub direct download
+        if [[ $link ]]; then
+            msg warn "下载 ${name} > ${link}"
+            if _wget -q -c $link -O $tmpfile; then
+                mv -f $tmpfile $is_ok
+                return 0
+            fi
+            # fallback to gh-proxy
+            msg warn "直连失败, 尝试代理下载 > ${gh_proxy}${link}"
+            if _wget -q -c "${gh_proxy}${link}" -O $tmpfile; then
+                mv -f $tmpfile $is_ok
+                return 0
+            fi
+        fi
+        # fallback to sing-box official installer
+        msg warn "GitHub 下载失败, 尝试 sing-box 官方安装脚本..."
+        if bash <(_curl https://sing-box.app/install.sh) 2>/dev/null; then
+            local _official_bin=$(type -P sing-box)
+            if [[ $_official_bin ]]; then
+                msg ok "官方脚本安装成功"
+                local _official_ver=$($_official_bin version 2>/dev/null | head -n1 | grep -E -o 'v[0-9.]+' | head -1)
+                [[ $_official_ver ]] && is_core_ver=$_official_ver
+                # package into tar.gz for uniform handling
+                mkdir -p $tmpdir/official_pkg/sing-box-official
+                cp -f $_official_bin $tmpdir/official_pkg/sing-box-official/sing-box
+                tar czf $is_ok -C $tmpdir/official_pkg sing-box-official 2>/dev/null
+                if [[ -f $is_ok ]]; then
+                    return 0
+                fi
+            fi
+        fi
+        msg err "下载 ${name} 失败, 所有渠道均不可用"
+        return 1
         ;;
     sh)
         link=https://github.com/${is_sh_repo}/releases/latest/download/code.tar.gz
@@ -216,12 +255,12 @@ download() {
 
     [[ $link ]] && {
         msg warn "下载 ${name} > ${link}"
-        if _wget -t 3 -q -c $link -O $tmpfile; then
+        if _wget -q -c $link -O $tmpfile; then
             mv -f $tmpfile $is_ok
         else
             # fallback to gh-proxy
             msg warn "直连失败, 尝试代理下载 > ${gh_proxy}${link}"
-            if _wget -t 3 -q -c "${gh_proxy}${link}" -O $tmpfile; then
+            if _wget -q -c "${gh_proxy}${link}" -O $tmpfile; then
                 mv -f $tmpfile $is_ok
             fi
         fi
