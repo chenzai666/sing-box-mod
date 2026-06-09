@@ -200,8 +200,28 @@ download() {
             msg warn "本地缓存版本 ${yellow}${is_core_cached}${none} 已是最新, 跳过下载"
             return 0
         fi
-        # use sing-box official installer
-        msg warn "使用 sing-box 官方安装脚本..."
+        # get latest version from GitHub API
+        [[ ! $is_core_ver ]] && {
+            is_core_ver=$(_curl -s "https://api.github.com/repos/${is_core_repo}/releases/latest?v=$RANDOM" | grep tag_name | grep -E -o 'v([0-9.]+)')
+            [[ ! $is_core_ver ]] && is_core_ver=$(_curl -s "${gh_proxy}https://api.github.com/repos/${is_core_repo}/releases/latest?v=$RANDOM" | grep tag_name | grep -E -o 'v([0-9.]+)')
+        }
+        [[ $is_core_ver ]] && link="https://github.com/${is_core_repo}/releases/download/${is_core_ver}/${is_core}-${is_core_ver:1}-linux-${is_arch}.tar.gz"
+        # 1) Direct download with curl -L (follows GitHub 302 redirect)
+        if [[ $link ]]; then
+            msg warn "下载 ${name} ${is_core_ver}..."
+            if _curl -L $link -o $tmpfile; then
+                mv -f $tmpfile $is_ok
+                return 0
+            fi
+            # 2) Fallback via gh-proxy
+            msg warn "直连失败, 尝试代理下载..."
+            if _curl -L "${gh_proxy}${link}" -o $tmpfile; then
+                mv -f $tmpfile $is_ok
+                return 0
+            fi
+        fi
+        # 3) Last resort: sing-box official installer
+        msg warn "GitHub 下载失败, 尝试 sing-box 官方安装脚本..."
         if bash <(_curl https://sing-box.app/install.sh) 2>/dev/null; then
             local _official_bin=$(type -P sing-box)
             if [[ $_official_bin ]]; then
@@ -217,7 +237,7 @@ download() {
                 fi
             fi
         fi
-        msg err "下载 ${name} 失败, 官方安装脚本不可用"
+        msg err "下载 ${name} 失败, 所有渠道均不可用"
         return 1
         ;;
     sh)
