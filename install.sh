@@ -41,7 +41,7 @@ cmd=$(type -P apt-get || type -P yum || type -P zypper || type -P apk)
 # systemd or openrc
 is_systemd=$(type -P systemctl)
 is_openrc=$(type -P rc-service)
-[[ ! $is_systemd && ! $is_openrc ]] && {
+[[ ! $is_systemd && ! $is_openrc && ! $cmd =~ apk ]] && {
     err "此系统缺少 ${yellow}(systemctl 或 rc-service)${none}, 请安装 systemd 或确认 OpenRC 已启用."
 }
 
@@ -71,9 +71,9 @@ is_log_dir=/var/log/$is_core
 is_sh_bin=/usr/local/bin/$is_core
 is_sh_dir=$is_core_dir/sh
 is_sh_repo=chenzai666/sing-box-mod
-is_pkg="wget tar bash"
-# Alpine: gcompat provides glibc compatibility for prebuilt binaries
-[[ $cmd =~ apk ]] && is_pkg="$is_pkg gcompat jq"
+is_pkg="wget curl ca-certificates tar bash"
+# Alpine: install OpenRC and common utilities up front to avoid silent waits.
+[[ $cmd =~ apk ]] && is_pkg="$is_pkg openrc gcompat jq coreutils"
 is_config_json=$is_core_dir/config.json
 # local cache
 is_core_cached=
@@ -129,6 +129,11 @@ _curl() {
     curl -fsSL --max-time 60 --retry 2 $*
 }
 
+_curl_fast() {
+    [[ $proxy ]] && export https_proxy=$proxy
+    curl -fsSL --connect-timeout 5 --max-time 8 --retry 1 $*
+}
+
 # print a mesage
 msg() {
     case $1 in
@@ -148,10 +153,11 @@ msg() {
 
 # show help msg
 show_help() {
-    echo -e "Usage: $0 [-f xxx | -l | -p xxx | -v xxx | -h]"
+    echo -e "Usage: $0 [-f xxx | -i xxx | -l | -p xxx | -v xxx | -h]"
     echo -e "  -f, --core-file <path>          自定义 $is_core_name 文件路径, e.g., -f /root/$is_core-linux-amd64.tar.gz"
+    echo -e "  -i, --ip <addr>                 自定义服务器 IP 或域名, 跳过自动探测"
     echo -e "  -l, --local-install             本地获取安装脚本, 使用当前目录"
-    echo -e "  -p, --proxy <addr>              使用代理下载, e.g., -p http://127.0.0.1:2333"
+    echo -e "  -p, --proxy <addr>              使用代理下载, e.g., -p http://127.0.0.1:7890"
     echo -e "  -v, --core-version <ver>        自定义 $is_core_name 版本, e.g., -v v1.8.13"
     echo -e "  -h, --help                      显示此帮助界面\n"
 
@@ -168,8 +174,8 @@ install_pkg() {
         pkg=$(echo $cmd_not_found | sed 's/,/ /g')
         msg warn "安装依赖包 >${pkg}"
         if [[ $cmd =~ apk ]]; then
-            apk update &>/dev/null
-            apk add $pkg &>/dev/null
+            apk update
+            apk add --no-cache $pkg
         else
             $cmd install -y $pkg &>/dev/null
             if [[ $? != 0 ]]; then
@@ -190,6 +196,7 @@ install_pkg() {
 
 # download file
 download() {
+    fallback_link=
     case $1 in
     core)
         name=$is_core_name
@@ -199,6 +206,23 @@ download() {
         if [[ $is_core_cached ]] && [[ $is_core_ver == $is_core_cached ]]; then
             msg warn "本地缓存版本 ${yellow}${is_core_cached}${none} 已是最新, 跳过下载"
             return 0
+        fi
+        # Alpine works best with its native package. It avoids GitHub release
+        # redirects and glibc compatibility edge cases on musl systems.
+        if [[ $cmd =~ apk && ! $is_core_ver ]]; then
+            msg warn "Alpine 系统优先使用 edge/community 安装 ${name}..."
+            if apk add --no-cache --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community $is_core; then
+                local _apk_bin=$(type -P $is_core)
+                if [[ $_apk_bin ]]; then
+                    local _apk_ver=$($_apk_bin version 2>/dev/null | head -n1 | grep -E -o 'v[0-9.]+' | head -1)
+                    [[ $_apk_ver ]] && is_core_ver=$_apk_ver
+                    mkdir -p $tmpdir/apk_pkg/sing-box-apk
+                    cp -f $_apk_bin $tmpdir/apk_pkg/sing-box-apk/$is_core
+                    tar czf $is_ok -C $tmpdir/apk_pkg sing-box-apk 2>/dev/null
+                    [[ -f $is_ok ]] && return 0
+                fi
+            fi
+            msg warn "Alpine 原生安装失败, 继续尝试 GitHub 下载..."
         fi
         # get latest version from GitHub API
         [[ ! $is_core_ver ]] && {
@@ -241,7 +265,8 @@ download() {
         return 1
         ;;
     sh)
-        link=https://github.com/${is_sh_repo}/releases/latest/download/code.tar.gz
+        link=https://raw.githubusercontent.com/${is_sh_repo}/main/code.tar.gz
+        fallback_link=https://cdn.jsdelivr.net/gh/${is_sh_repo}@main/code.tar.gz
         name="$is_core_name 脚本"
         tmpfile=$tmpsh
         is_ok=$is_sh_ok
@@ -259,6 +284,15 @@ download() {
         if _wget -q -c $link -O $tmpfile; then
             mv -f $tmpfile $is_ok
         else
+            rm -f $tmpfile
+            if [[ $fallback_link ]]; then
+                msg warn "直连失败, 尝试备用下载 > ${fallback_link}"
+                if _wget -q -c "$fallback_link" -O $tmpfile; then
+                    mv -f $tmpfile $is_ok
+                    return 0
+                fi
+                rm -f $tmpfile
+            fi
             # fallback to gh-proxy
             msg warn "直连失败, 尝试代理下载 > ${gh_proxy}${link}"
             if _wget -q -c "${gh_proxy}${link}" -O $tmpfile; then
@@ -270,8 +304,25 @@ download() {
 
 # get server ip
 get_ip() {
-    export "$(_wget -4 -qO- https://one.one.one.one/cdn-cgi/trace | grep ip=)" &>/dev/null
-    [[ -z $ip ]] && export "$(_wget -6 -qO- https://one.one.one.one/cdn-cgi/trace | grep ip=)" &>/dev/null
+    [[ $ip ]] && return 0
+    local _ip
+    for url in \
+        https://one.one.one.one/cdn-cgi/trace \
+        https://api.ipify.org \
+        https://ifconfig.me \
+        https://icanhazip.com; do
+        if [[ $url == *cdn-cgi/trace ]]; then
+            _ip=$(_curl_fast "$url" 2>/dev/null | awk -F= '/^ip=/{print $2; exit}' | tr -d '[:space:]')
+        else
+            _ip=$(_curl_fast "$url" 2>/dev/null | tr -d '[:space:]')
+        fi
+        if [[ $_ip =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ || $_ip =~ : ]]; then
+            ip=$_ip
+            export ip
+            return 0
+        fi
+    done
+    return 1
 }
 
 # check background tasks status
@@ -337,6 +388,15 @@ pass_args() {
             is_core_file=$2
             shift 2
             ;;
+        -i | --ip)
+            [[ -z $2 ]] && {
+                err "($1) 缺少必需参数, 正确使用示例: [$1 1.2.3.4]"
+            }
+            ip=$2
+            custom_ip=$2
+            export ip
+            shift 2
+            ;;
         -l | --local-install)
             [[ ! -f ${PWD}/src/core.sh || ! -f ${PWD}/$is_core.sh ]] && {
                 err "当前目录 (${PWD}) 非完整的脚本目录."
@@ -346,7 +406,7 @@ pass_args() {
             ;;
         -p | --proxy)
             [[ -z $2 ]] && {
-                err "($1) 缺少必需参数, 正确使用示例: [$1 http://127.0.0.1:2333 or -p socks5://127.0.0.1:2333]"
+                err "($1) 缺少必需参数, 正确使用示例: [$1 http://127.0.0.1:7890 or -p socks5://127.0.0.1:7890]"
             }
             proxy=$2
             shift 2
@@ -430,14 +490,22 @@ main() {
     fi
 
     # install dependent pkg
-    if [[ $cmd =~ apk ]]; then
-        # Alpine: force install full versions to replace BusyBox applets
-        apk update &>/dev/null
-        apk add $is_pkg &>/dev/null
-        [[ $? == 0 ]] && >$is_pkg_ok
-    else
-        install_pkg $is_pkg &
-    fi
+    install_pkg $is_pkg
+
+    # refresh commands after dependency installation.
+    is_wget=$(type -P wget)
+    is_systemd=$(type -P systemctl)
+    is_openrc=$(type -P rc-service)
+    [[ ! $is_systemd && ! $is_openrc ]] && {
+        msg err "此系统缺少 ${yellow}(systemctl 或 rc-service)${none}, 请安装 systemd 或确认 OpenRC 已启用."
+        exit_and_del_tmpdir
+    }
+
+    [[ $custom_ip ]] && {
+        mkdir -p $is_core_dir
+        echo "$custom_ip" >$is_core_dir/custom_ip
+        msg warn "使用自定义服务器 IP: ${yellow}$custom_ip${none}"
+    }
 
     # jq
     if [[ $(type -P jq) ]]; then

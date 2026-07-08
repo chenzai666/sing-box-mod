@@ -1,6 +1,6 @@
 # sing-box-mod
 
-基于 [233boy/sing-box](https://github.com/233boy/sing-box) 的定制版本。
+chenzai666 定制维护的 sing-box 一键安装与管理脚本。
 
 ## 定制内容
 
@@ -58,7 +58,7 @@ bash install.sh
 
 ## 与原版的主要差异
 
-| 功能 | 原版 233boy | 本定制版 |
+| 功能 | 上游原版 | 本定制版 |
 |------|------------|---------|
 | 安装时指定 IP | 不支持 | `-i <IP>` |
 | IP 持久化 | 无，每次探测覆盖 | `sing-box ip set` |
@@ -67,7 +67,7 @@ bash install.sh
 
 ## 原版特性
 
-继承 233boy/sing-box 的全部功能，包括 VLESSReality、Shadowsocks、Trojan、VMess 等协议的一键配置和管理。
+继承上游脚本的主要功能，包括 VLESS Reality、Shadowsocks、Trojan、VMess 等协议的一键配置和管理。
 
 ## License
 
