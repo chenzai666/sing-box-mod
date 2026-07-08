@@ -21,7 +21,7 @@ protocol_list=(
     VLESS-REALITY
     VLESS-HTTP2-REALITY
     AnyTLS
-    AnyTLS-REALITY
+    anytls-reality
     # Direct
     Socks
 )
@@ -670,7 +670,7 @@ change() {
         is_short_id=$is_new_short_id
         # 重新生成 URL
         if [[ $is_protocol == "anytls" ]]; then
-            is_url="anytls://$password@$is_addr:$port/?security=reality&sni=$is_servername&fp=chrome&pbk=$is_public_key&sid=$is_short_id#chenzai666-$net-$is_addr"
+            is_url="anytls://$password@$is_addr:$port/?security=reality&sni=$is_servername&fp=chrome&pbk=$is_public_key&sid=$is_short_id#chenzai666-anytls-reality-$is_addr"
         else
             is_url="$is_protocol://$uuid@$is_addr:$port?encryption=none&security=reality&flow=$is_flow&type=$is_net_type&sni=$is_servername&pbk=$is_public_key&fp=chrome&sid=$is_short_id#chenzai666-$net-$is_addr"
         fi
@@ -849,8 +849,8 @@ add() {
         anytls)
             is_new_protocol=AnyTLS
             ;;
-        anyreality | anytls-reality | anytlsreality | ar)
-            is_new_protocol=AnyTLS-REALITY
+        anytls-reality)
+            is_new_protocol=anytls-reality
             ;;
         socks)
             is_new_protocol=Socks
@@ -1505,7 +1505,7 @@ info() {
             is_info_show=(0 1 2 10 16 4 8 17 18 22)
             is_net_type=tcp
             is_info_str=($is_protocol $is_addr $port $password $is_servername $is_net_type reality chrome $is_public_key $is_short_id)
-            is_url="anytls://$password@$is_addr:$port/?security=reality&sni=$is_servername&fp=chrome&pbk=$is_public_key&sid=$is_short_id#chenzai666-$net-$is_addr"
+            is_url="anytls://$password@$is_addr:$port/?security=reality&sni=$is_servername&fp=chrome&pbk=$is_public_key&sid=$is_short_id#chenzai666-anytls-reality-$is_addr"
         elif [[ $is_anytls_domain ]]; then
             is_can_change=(0 1 4)
             is_info_show=(0 1 2 10 8)

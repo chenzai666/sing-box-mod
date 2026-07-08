@@ -42,14 +42,12 @@ sing-box change 13 auto            # 自动随机生成新值
 sing-box change 13 abc12345        # 指定具体值
 ```
 
-### 5. 支持 AnyTLS Reality（`anyreality`）
+### 5. 支持 anytls-reality
 
-协议菜单新增 `AnyTLS-REALITY`，序号为 21。可用命令别名直接添加：
+协议菜单新增 `anytls-reality`，序号为 21。可用命令别名直接添加：
 
 ```bash
-sing-box add anyreality [port] [password] [sni]
 sing-box add anytls-reality [port] [password] [sni]
-sing-box add ar [port] [password] [sni]
 ```
 
 生成的分享链接格式为 `anytls://.../?security=reality&...`，并包含 `pbk` 与 `sid` 参数。
@@ -76,11 +74,11 @@ bash install.sh
 | IP 持久化 | 无，每次探测覆盖 | `sing-box ip set` |
 | Reality short_id | 硬编码空字符串 `[""]` | 随机 16 位 hex |
 | 更改 short_id | 无 | `sing-box change 13` |
-| AnyTLS Reality | 无 | `sing-box add anyreality`，菜单序号 21 |
+| anytls-reality | 无 | `sing-box add anytls-reality`，菜单序号 21 |
 
 ## 原版特性
 
-继承上游脚本的主要功能，包括 VLESS Reality、AnyTLS Reality、Shadowsocks、Trojan、VMess 等协议的一键配置和管理。
+继承上游脚本的主要功能，包括 VLESS Reality、anytls-reality、Shadowsocks、Trojan、VMess 等协议的一键配置和管理。
 
 ## License
 
