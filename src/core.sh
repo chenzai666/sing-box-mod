@@ -21,6 +21,7 @@ protocol_list=(
     VLESS-REALITY
     VLESS-HTTP2-REALITY
     AnyTLS
+    AnyTLS-REALITY
     # Direct
     Socks
 )
@@ -68,6 +69,7 @@ info_list=(
     "用户名 (Username)"
     "跳过证书验证 (allowInsecure)"
     "拥塞控制算法 (congestion_control)"
+    "Short ID (short_id)"
 )
 change_list=(
     "更改协议"
@@ -339,7 +341,7 @@ create() {
         is_json_file=$is_conf_dir/$is_config_name
         # get json
         [[ $is_change || ! $json_str ]] && get protocol $2
-        [[ $net == "reality" ]] && is_add_public_key=",outbounds:[{type:\"direct\"},{tag:\"public_key_$is_public_key\",type:\"direct\"}]"
+        [[ $net == "reality" || $net == "anyreality" ]] && is_add_public_key=",outbounds:[{type:\"direct\"},{tag:\"public_key_$is_public_key\",type:\"direct\"}]"
         is_new_json=$(jq "{inbounds:[{tag:\"$is_config_name\",type:\"$is_protocol\",$is_listen,listen_port:$port,$json_str}]$is_add_public_key}" <<<{})
         [[ $is_test_json ]] && return # tmp test
         # only show json, dont save to file.
@@ -667,7 +669,11 @@ change() {
         # 从配置文件重新读取新的 short_id（确保变量与文件一致）
         is_short_id=$is_new_short_id
         # 重新生成 URL
-        is_url="$is_protocol://$uuid@$is_addr:$port?encryption=none&security=reality&flow=$is_flow&type=$is_net_type&sni=$is_servername&pbk=$is_public_key&fp=chrome&sid=$is_short_id#chenzai666-$net-$is_addr"
+        if [[ $is_protocol == "anytls" ]]; then
+            is_url="anytls://$password@$is_addr:$port/?security=reality&sni=$is_servername&fp=chrome&pbk=$is_public_key&sid=$is_short_id#chenzai666-$net-$is_addr"
+        else
+            is_url="$is_protocol://$uuid@$is_addr:$port?encryption=none&security=reality&flow=$is_flow&type=$is_net_type&sni=$is_servername&pbk=$is_public_key&fp=chrome&sid=$is_short_id#chenzai666-$net-$is_addr"
+        fi
         info
         msg "\n已更新 Short ID 为: $(_green $is_new_short_id) \n"
         ;;
@@ -843,6 +849,9 @@ add() {
         anytls)
             is_new_protocol=AnyTLS
             ;;
+        anyreality | anytls-reality | anytlsreality | ar)
+            is_new_protocol=AnyTLS-REALITY
+            ;;
         socks)
             is_new_protocol=Socks
             ;;
@@ -859,7 +868,7 @@ add() {
     # no prefer protocol
     [[ ! $is_new_protocol ]] && ask set_protocol
 
-    if [[ ${is_new_protocol,,} == 'anytls' ]]; then
+    if [[ ${is_new_protocol,,} == anytls* ]]; then
         is_core_major=$(echo "$is_core_ver" | cut -d. -f1)
         is_core_minor=$(echo "$is_core_ver" | cut -d. -f2)
         if [[ ${is_core_major:-0} -lt 1 || ${is_core_major:-0} -eq 1 && ${is_core_minor:-0} -lt 12 ]]; then
@@ -884,6 +893,13 @@ add() {
         is_use_port=$2
         is_use_pass=$3
         is_add_opts="[port] [password]"
+        ;;
+    anytls*reality*)
+        is_reality=1
+        is_use_port=$2
+        is_use_pass=$3
+        is_use_servername=$4
+        is_add_opts="[port] [password] [sni]"
         ;;
     *reality*)
         is_reality=1
@@ -951,7 +967,7 @@ add() {
 
     # prefer args.
     if [[ $2 ]]; then
-        for v in is_use_port is_use_uuid is_use_host is_use_path is_use_pass is_use_method is_use_door_addr is_use_door_port; do
+        for v in is_use_port is_use_uuid is_use_host is_use_path is_use_pass is_use_method is_use_door_addr is_use_door_port is_use_servername; do
             [[ ${!v} == 'auto' ]] && unset $v
         done
 
@@ -1228,6 +1244,16 @@ get() {
             is_protocol=$net
             json_str="override_port:$door_port,override_address:\"$door_addr\""
             ;;
+        anytls*reality*)
+            net=anyreality
+            is_protocol=anytls
+            [[ ! $password ]] && password=$uuid
+            [[ ! $is_servername ]] && is_servername=$is_random_servername
+            [[ ! $is_private_key ]] && get_pbk
+            [[ ! $is_short_id ]] && is_short_id=$($is_core_bin generate rand 8 --hex 2>/dev/null || openssl rand -hex 16)
+            is_users="users:[{password:\"$password\"}]"
+            json_str="$is_users,padding_scheme:[],tls:{enabled:true,server_name:\"$is_servername\",reality:{enabled:true,handshake:{server:\"$is_servername\",server_port:443},private_key:\"$is_private_key\",short_id:[\"$is_short_id\"]}}"
+            ;;
         anytls*)
             net=anytls
             is_protocol=$net
@@ -1461,24 +1487,32 @@ info() {
         is_can_change=(0 1 5 9 10 13)
         is_flow=xtls-rprx-vision
         is_net_type=tcp
-        # is_info_show indices: 0=protocol,1=addr,2=port,3=uuid,7=serverName,4=net,8=TLS,16=fingerprint,9=pubkey,18=flow,19=short_id
-        is_info_show=(0 1 2 3 7 4 8 16 17 18 19)
         [[ $net_type =~ "http" || ${is_new_protocol,,} =~ "http" ]] && {
             is_flow=
             is_net_type=h2
-            # HTTP2 去掉 flow (index 18)，因为 index 15 在新数组里已不存在
-            is_info_show=(${is_info_show[@]/18/})
+            is_info_show=(0 1 2 3 4 8 16 17 18 22)
+            is_info_str=($is_protocol $is_addr $port $uuid $is_net_type reality $is_servername chrome $is_public_key $is_short_id)
+        } || {
+            is_info_show=(0 1 2 3 15 4 8 16 17 18 22)
+            is_info_str=($is_protocol $is_addr $port $uuid $is_flow $is_net_type reality $is_servername chrome $is_public_key $is_short_id)
         }
-        is_info_str=($is_protocol $is_addr $port $uuid $is_flow $is_net_type reality $is_servername chrome $is_public_key $is_short_id)
         is_url="$is_protocol://$uuid@$is_addr:$port?encryption=none&security=reality&flow=$is_flow&type=$is_net_type&sni=$is_servername&pbk=$is_public_key&fp=chrome&sid=$is_short_id#chenzai666-$net-$is_addr"
         ;;
-    anytls)
-        is_can_change=(0 1 4)
-        if [[ $is_anytls_domain ]]; then
+    anytls | anyreality)
+        if [[ $net == "anyreality" || $is_reality ]]; then
+            is_color=41
+            is_can_change=(0 1 4 9 10 13)
+            is_info_show=(0 1 2 10 16 4 8 17 18 22)
+            is_net_type=tcp
+            is_info_str=($is_protocol $is_addr $port $password $is_servername $is_net_type reality chrome $is_public_key $is_short_id)
+            is_url="anytls://$password@$is_addr:$port/?security=reality&sni=$is_servername&fp=chrome&pbk=$is_public_key&sid=$is_short_id#chenzai666-$net-$is_addr"
+        elif [[ $is_anytls_domain ]]; then
+            is_can_change=(0 1 4)
             is_info_show=(0 1 2 10 8)
             is_info_str=($is_protocol $is_anytls_domain $port $password tls)
             is_url="anytls://$password@$is_anytls_domain:$port#chenzai666-$net-$is_anytls_domain"
         else
+            is_can_change=(0 1 4)
             is_insecure=1
             is_info_show=(0 1 2 10 8 20)
             is_info_str=($is_protocol $is_addr $port $password tls true)
