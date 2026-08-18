@@ -26,7 +26,7 @@ sing-box ip                        # 查看当前 IP
 
 ### 3. Reality Short ID 随机生成
 
-- 使用 `sing-box generate rand 8 --hex` 生成 16 位十六进制 Short ID
+- 使用 `sing-box generate rand 4 --hex` 生成 4 字节 8 位十六进制 Short ID（与主流客户端兼容性最佳）
 - 配置文件中不再使用空字符串 `[""]`，改为随机值
 - 分享链接 URL 中包含正确的 `sid=` 参数
 - 查看配置 (`sing-box info`) 时会显示 Short ID
@@ -50,7 +50,36 @@ sing-box change 13 abc12345        # 指定具体值
 sing-box add anytls-reality [port] [password] [sni]
 ```
 
-生成的分享链接格式为 `anytls://.../?security=reality&...`，并包含 `pbk` 与 `sid` 参数。
+生成的分享链接格式为 `anytls://...?security=reality&...`，并包含 `pbk` 与 `sid` 参数。
+
+### 6. anytls 自签场景对齐甬哥 argosbx 风格
+
+无域名时使用自签证书的 anytls，默认注入伪装 SNI 并双参数跳过证书验证，导入客户端即开即用：
+
+- 分享链接：`anytls://密码@IP:端口?sni=www.bing.com&insecure=1&allowInsecure=1#...`
+- 服务端 TLS 配置自动补 `server_name: www.bing.com` + `insecure: true`
+- `insecure` 兼容 sing-box 系客户端，`allowInsecure` 兼容 v2rayN 系，无需手动开启跳过证书验证
+- Reality 伪装握手端口可用 `SB_HANDSHAKE_PORT` 环境变量自定义（默认 443）
+
+### 7. 环境变量一键安装（批量部署）
+
+`install.sh` 默认安装 reality；可通过环境变量一条命令批量安装任意协议组合：
+
+```bash
+# 默认安装 reality（向后兼容）
+bash <(curl -Ls https://raw.githubusercontent.com/chenzai666/sing-box-mod/main/install.sh)
+
+# 额外安装 anytls
+SB_ANYTLS=1 bash <(curl -Ls .../install.sh)
+
+# 额外安装 anytls-reality
+SB_ANYTLS_REALITY=1 bash <(curl -Ls .../install.sh)
+
+# 自定义协议列表 + 伪装端口（空格分隔）
+SB_PROTOCOLS="reality anytls-reality" SB_HANDSHAKE_PORT=8443 bash <(curl -Ls .../install.sh)
+```
+
+批量安装时末尾统一重启服务，不再每个协议重启一次。
 
 ## 安装
 
@@ -72,9 +101,13 @@ bash install.sh
 |------|------------|---------|
 | 安装时指定 IP | 不支持 | `-i <IP>` |
 | IP 持久化 | 无，每次探测覆盖 | `sing-box ip set` |
-| Reality short_id | 硬编码空字符串 `[""]` | 随机 16 位 hex |
+| Reality short_id | 硬编码空字符串 `[""]` | 随机 4 字节 hex |
 | 更改 short_id | 无 | `sing-box change 13` |
 | anytls-reality | 无 | `sing-box add anytls-reality`，菜单序号 21 |
+| anytls 自签 SNI | 无 | 默认 `www.bing.com` 伪装 |
+| anytls 跳过证书验证 | 仅 `allowInsecure=1` | `insecure=1&allowInsecure=1` 双参数 |
+| 批量安装 | 无 | `SB_PROTOCOLS` / `SB_ANYTLS` / `SB_ANYTLS_REALITY` |
+| Reality 伪装端口 | 固定 443 | `SB_HANDSHAKE_PORT` 可配 |
 
 ## 原版特性
 
