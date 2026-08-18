@@ -452,6 +452,9 @@ update_sh_only() {
         err "脚本未安装, 请直接执行安装命令."
     }
     msg warn "更新脚本 (仅更新 ${is_sh_dir}, 不影响核心与配置)..."
+    # create tmpdir: main() 的正常流程在第 509 行才 mkdir, 而 update-sh 在
+    # main() 顶部被拦截, 此时 tmpdir 尚不存在, 需提前创建否则下载写入失败
+    mkdir -p $tmpdir
     # download latest script package
     download sh
     [[ ! -f $is_sh_ok ]] && err "脚本包下载失败."
