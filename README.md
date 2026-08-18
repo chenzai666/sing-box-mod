@@ -114,7 +114,10 @@ SB_ANYTLS_DOMAIN=example.com SB_CERT_FILE=/etc/ssl/cert.crt SB_KEY_FILE=/etc/ssl
 ```bash
 sing-box self-update     # 或简写: sing-box su
 sing-box update sh       # 等价
+sing-box update          # 无参数: 先更新脚本, 再更新核心(一步到位)
 ```
+
+> 注意：`sing-box update`（无参数）会**先检查脚本更新、再更新核心**；若只更新了核心而脚本仍是旧版（例如早期版本只更新核心），新功能可能不生效，请使用上面的命令更新脚本。
 
 更新逻辑：
 

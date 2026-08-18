@@ -49,7 +49,7 @@ show_help() {
             "   import                                          导入 xray/v2ray 脚本配置\n"
             "管理:"
             "   un, uninstall                                   卸载"
-            "   u, update [core | sh | caddy] [ver]             更新"
+            "   u, update [core | sh | caddy] [ver]             更新(无参数: 先更新脚本再更新核心)"
             "   su, self-update                                 更新脚本(从 GitHub 拉取最新)"
             "   U, update.sh                                    同等于 su, 更新脚本"
             "   s, status                                       运行状态"

@@ -1933,11 +1933,14 @@ main() {
     u | up | update | U | update.sh)
         is_update_name=$2
         is_update_ver=$3
-        [[ ! $is_update_name ]] && is_update_name=core
-        [[ $1 == 'U' || $1 == 'update.sh' ]] && {
+        if [[ $1 == 'U' || $1 == 'update.sh' ]]; then
             is_update_name=sh
             is_update_ver=
-        }
+        elif [[ ! $is_update_name ]]; then
+            # 无参数: 先检查并更新脚本, 再更新核心
+            update_script
+            is_update_name=core
+        fi
         update $is_update_name $is_update_ver
         ;;
     ssss | ss2022)
