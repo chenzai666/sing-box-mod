@@ -1668,10 +1668,8 @@ update() {
         is_update_repo=$is_core_repo
         ;;
     2 | sh)
-        is_update_name=sh
-        is_show_name="$is_core_name 脚本"
-        is_run_ver=$is_sh_ver
-        is_update_repo=$is_sh_repo
+        update_script
+        return
         ;;
     3 | caddy)
         [[ ! $is_caddy ]] && err "不支持更新 Caddy."
@@ -1705,6 +1703,44 @@ update() {
     msg "更新成功, 当前 $is_show_name 版本: $(_green $is_new_ver)\n"
     msg "$(_green 请查看更新说明: https://github.com/$is_update_repo/releases/tag/$is_new_ver)\n"
     [[ $is_update_name != 'sh' ]] && manage restart $is_update_name &
+}
+
+# update script itself from GitHub main branch (self-update)
+update_script() {
+    tmpdir=$(mktemp -u)
+    [[ ! $tmpdir ]] && tmpdir=/tmp/tmp-$RANDOM
+    mkdir -p $tmpdir
+    tmpfile=$tmpdir/sh.tar.gz
+    link="https://raw.githubusercontent.com/${is_sh_repo}/main/code.tar.gz"
+    msg "\n检查脚本更新: $(msg_ul https://github.com/$is_sh_repo) ...\n"
+    if ! _wget -t 5 -c $link -O $tmpfile 2>/dev/null; then
+        rm -rf $tmpdir
+        err "下载脚本失败, 请检查网络后重试."
+    fi
+    tar zxf $tmpfile -C $tmpdir
+    is_new_ver=$(grep -E '^is_sh_ver=' $tmpdir/sing-box.sh | cut -d= -f2)
+    [[ ! $is_new_ver ]] && {
+        rm -rf $tmpdir
+        err "无法识别下载的脚本版本, 请稍后重试."
+    }
+    [[ $is_new_ver == $is_sh_ver ]] && {
+        rm -rf $tmpdir
+        msg "\n脚本当前已经是最新版本: $(_green $is_sh_ver)\n"
+        return
+    }
+    msg "\n发现脚本新版本: $is_sh_ver → $(_green $is_new_ver)\n"
+    # backup current script
+    is_backup_dir=$is_sh_dir/backup-$is_sh_ver
+    rm -rf $is_backup_dir
+    _mkdir $is_backup_dir
+    cp -rf $is_sh_dir/src $is_sh_dir/sing-box.sh $is_backup_dir/
+    msg "旧版本已备份至: $(_yellow $is_backup_dir)\n"
+    # install new script
+    tar zxf $tmpfile -C $is_sh_dir
+    chmod +x $is_sh_bin ${is_sh_bin/$is_core/sb}
+    rm -rf $tmpdir
+    msg "脚本更新成功: $is_sh_ver → $(_green $is_new_ver)\n"
+    msg "重新执行 $(msg_ul https://github.com/$is_sh_repo) 即可使用新版本.\n"
 }
 
 # main menu; if no prefer args.
@@ -1890,6 +1926,9 @@ main() {
         ;;
     un | uninstall)
         uninstall
+        ;;
+    su | self-update | update-script)
+        update_script
         ;;
     u | up | update | U | update.sh)
         is_update_name=$2

@@ -107,6 +107,22 @@ SB_ANYTLS_DOMAIN=example.com SB_CERT_FILE=/etc/ssl/cert.crt SB_KEY_FILE=/etc/ssl
 
 `sing-box info` / `change` 流程可正确识别三种证书模式（ACME 域名 / 外部证书 / 自签），展示与修改不受影响。批量安装（`SB_ANYTLS`）默认自签，不会弹出询问。
 
+### 9. 脚本自更新（`sing-box self-update`）
+
+一键将脚本更新到 GitHub main 分支最新版，不依赖 Release tag（与代码仓库版本脱节时也能正确更新）：
+
+```bash
+sing-box self-update     # 或简写: sing-box su
+sing-box update sh       # 等价
+```
+
+更新逻辑：
+
+- 从 `https://raw.githubusercontent.com/chenzai666/sing-box-mod/main/code.tar.gz` 拉取最新包
+- 对比包内 `sing-box.sh` 的内置版本号（`is_sh_ver`）与当前版本，一致则提示已是最新
+- 有新版本时**先备份**当前脚本到 `$is_sh_dir/backup-<旧版本>`，再覆盖安装，失败可随时回滚
+- 主菜单「更新 → 更新脚本」与 `sing-box U` / `update.sh` 同样走此逻辑
+
 ## 安装
 
 ```bash
@@ -136,6 +152,7 @@ bash install.sh
 | Reality 伪装端口 | 固定 443 | `SB_HANDSHAKE_PORT` 可配 |
 | anytls 真域名证书 | 仅 ACME 申请 | 优先复用 `/etc/ssl` 已有证书（`SB_ANYTLS_DOMAIN`） |
 | anytls 证书方式选择 | 无，只能命令行传域名 | 交互式菜单选择 自签 / 域名证书 |
+| 脚本自更新 | 依赖 Release tag 判断版本 | `su / self-update` 直接对比 main 分支内置版本，先备份后更新 |
 
 ## 原版特性
 
