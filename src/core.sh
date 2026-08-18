@@ -208,10 +208,10 @@ is_test() {
         [[ $(is_port_used $2) && ! $is_cant_test_port ]] && echo ok
         ;;
     domain)
-        echo $2 | grep -E -i '^\w(\w|\-|\.)?+\.\w+$'
+        echo $2 | grep -E -i '^\w(\w|-|\.)?+\.\w+$'
         ;;
     path)
-        echo $2 | grep -E -i '^\/\w(\w|\-|\/)?+\w$'
+        echo $2 | grep -E -i '^\/\w(\w|-|\/)?+\w$'
         ;;
     uuid)
         echo $2 | grep -E -i '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
@@ -222,12 +222,12 @@ is_test() {
 
 is_port_used() {
     if [[ $(type -P netstat) ]]; then
-        [[ ! $is_used_port ]] && is_used_port="$(netstat -tunlp | sed -n 's/.*:\([0-9]\+\).*/\1/p' | sort -nu)"
+        [[ ! $is_used_port ]] && is_used_port="$(netstat -tunlp 2>/dev/null | sed -n 's/.*:\([0-9]\+\).*/\1/p' | sort -nu)"
         echo $is_used_port | sed 's/ /\n/g' | grep ^${1}$
         return
     fi
     if [[ $(type -P ss) ]]; then
-        [[ ! $is_used_port ]] && is_used_port="$(ss -tunlp | sed -n 's/.*:\([0-9]\+\).*/\1/p' | sort -nu)"
+        [[ ! $is_used_port ]] && is_used_port="$(ss -tunlp 2>/dev/null | sed -n 's/.*:\([0-9]\+\).*/\1/p' | sort -nu)"
         echo $is_used_port | sed 's/ /\n/g' | grep ^${1}$
         return
     fi
@@ -251,7 +251,7 @@ ask() {
         [[ $is_no_auto_tls ]] && {
             unset is_tmp_list
             for v in ${protocol_list[@]}; do
-                [[ $(grep -i "\-tls$" <<<$v) ]] && is_tmp_list=(${is_tmp_list[@]} $v)
+                [[ $(grep -i -e "-tls$" <<<$v) ]] && is_tmp_list=(${is_tmp_list[@]} $v)
             done
         }
         is_opt_msg="\n请选择协议:\n"

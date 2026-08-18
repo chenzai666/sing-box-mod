@@ -124,7 +124,7 @@ fi
 if [[ -f $is_caddy_bin && -d $is_caddy_dir && $is_caddy_service ]]; then
     is_caddy=1
     if [[ $is_systemd ]]; then
-        [[ -f /lib/systemd/system/caddy.service && ! $(grep '\-\-adapter caddyfile' /lib/systemd/system/caddy.service) ]] && {
+        [[ -f /lib/systemd/system/caddy.service && ! $(grep -e '--adapter caddyfile' /lib/systemd/system/caddy.service) ]] && {
             load systemd.sh
             install_service caddy
             systemctl restart caddy &
