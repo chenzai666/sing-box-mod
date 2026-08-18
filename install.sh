@@ -615,12 +615,17 @@ main() {
     # 用法: SB_ANYTLS_REALITY=1 bash <(curl -Ls ...)
     #       或 SB_PROTOCOLS="reality anytls-reality" 自定义协议列表 (空格分隔)
     #       或 SB_HANDSHAKE_PORT=8443 自定义 Reality 伪装端口
+    #       或 SB_ANYTLS_DOMAIN=example.com 安装真域名证书 anytls
+    #         (优先复用 /etc/ssl/cert.crt + /etc/ssl/private.key, 无则 ACME)
     is_batch_install=1
     for p in ${SB_PROTOCOLS:-reality}; do
         add $p auto
     done
     [[ $SB_ANYTLS ]] && add anytls auto
     [[ $SB_ANYTLS_REALITY ]] && add anytls-reality auto
+    # 真域名证书 anytls: 优先复用 /etc/ssl/cert.crt + /etc/ssl/private.key (存在时),
+    # 不存在则 ACME 申请。路径可用 SB_CERT_FILE / SB_KEY_FILE 覆盖。
+    [[ $SB_ANYTLS_DOMAIN ]] && add anytls auto auto $SB_ANYTLS_DOMAIN
     is_batch_install=
     # unified restart after batch install
     manage restart &

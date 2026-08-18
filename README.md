@@ -81,6 +81,28 @@ SB_PROTOCOLS="reality anytls-reality" SB_HANDSHAKE_PORT=8443 bash <(curl -Ls ...
 
 批量安装时末尾统一重启服务，不再每个协议重启一次。
 
+### 8. anytls 真域名证书复用（`/etc/ssl` 优先，无则 ACME）
+
+带域名安装 anytls 时，优先复用服务器已有的真域名证书，避免重复 ACME 申请：
+
+- 检测 `/etc/ssl/cert.crt` + `/etc/ssl/private.key`，存在则直接引用（`certificate_path` + `key_path`）
+- 不存在则自动走 ACME 申请（sing-box ≥ 1.14 用 `certificate_provider`，旧版用 `acme`）
+- 证书路径可用 `SB_CERT_FILE` / `SB_KEY_FILE` 环境变量覆盖（例如 certd 等工具签发后放置的证书）
+
+```bash
+# 方式一：交互式添加
+sing-box add anytls [port] [password] example.com
+
+# 方式二：环境变量一键安装（优先复用 /etc/ssl 证书，无则 ACME 申请）
+SB_ANYTLS_DOMAIN=example.com bash <(curl -Ls .../install.sh)
+
+# 自定义证书路径（可选）
+SB_ANYTLS_DOMAIN=example.com SB_CERT_FILE=/etc/ssl/cert.crt SB_KEY_FILE=/etc/ssl/private.key \
+  bash <(curl -Ls .../install.sh)
+```
+
+`sing-box info` / `change` 流程可正确识别三种证书模式（ACME 域名 / 外部证书 / 自签），展示与修改不受影响。
+
 ## 安装
 
 ```bash
@@ -108,6 +130,7 @@ bash install.sh
 | anytls 跳过证书验证 | 仅 `allowInsecure=1` | `insecure=1&allowInsecure=1` 双参数 |
 | 批量安装 | 无 | `SB_PROTOCOLS` / `SB_ANYTLS` / `SB_ANYTLS_REALITY` |
 | Reality 伪装端口 | 固定 443 | `SB_HANDSHAKE_PORT` 可配 |
+| anytls 真域名证书 | 仅 ACME 申请 | 优先复用 `/etc/ssl` 已有证书（`SB_ANYTLS_DOMAIN`） |
 
 ## 原版特性
 

@@ -1189,9 +1189,16 @@ get() {
             is_socks_user=$username
             is_socks_pass=$password
 
-            # extract anytls ACME domain
+            # extract anytls ACME domain / external cert domain
             [[ $is_protocol == 'anytls' ]] && {
                 is_anytls_domain=$(jq -r '(.inbounds[0].tls.certificate_provider.domain[0] // .inbounds[0].tls.acme.domain[0]) // empty' <<<$is_json_str 2>/dev/null)
+                # 外部证书模式: certificate_path 非默认自签文件时, 域名取 server_name
+                if [[ ! $is_anytls_domain ]]; then
+                    is_tmp_cert_path=$(jq -r '.inbounds[0].tls.certificate_path // empty' <<<$is_json_str 2>/dev/null)
+                    if [[ $is_tmp_cert_path && $is_tmp_cert_path != "$is_tls_cer" ]]; then
+                        is_anytls_domain=$(jq -r '.inbounds[0].tls.server_name // empty' <<<$is_json_str 2>/dev/null)
+                    fi
+                fi
             }
 
             is_config_name=$is_config_file
@@ -1274,13 +1281,21 @@ get() {
             [[ ! $password ]] && password=$uuid
             is_users="users:[{password:\"$password\"}]"
             if [[ $is_anytls_domain ]]; then
-                # sing-box >= 1.14.0 uses certificate_provider; older uses acme
-                is_core_major=$(echo "$is_core_ver" | cut -d. -f1)
-                is_core_minor=$(echo "$is_core_ver" | cut -d. -f2)
-                if [[ ${is_core_major:-0} -gt 1 || ${is_core_major:-0} -eq 1 && ${is_core_minor:-0} -ge 14 ]]; then
-                    is_anytls_tls="tls:{enabled:true,certificate_provider:{type:\"acme\",domain:[\"$is_anytls_domain\"]}}"
+                # 优先复用服务器已有真域名证书 (如 certd 签发后放置), 存在则不再走 ACME
+                # 路径可用环境变量覆盖: SB_CERT_FILE / SB_KEY_FILE
+                is_ext_cert=${SB_CERT_FILE:-/etc/ssl/cert.crt}
+                is_ext_key=${SB_KEY_FILE:-/etc/ssl/private.key}
+                if [[ -f $is_ext_cert && -f $is_ext_key ]]; then
+                    is_anytls_tls="tls:{enabled:true,server_name:\"$is_anytls_domain\",certificate_path:\"$is_ext_cert\",key_path:\"$is_ext_key\"}"
                 else
-                    is_anytls_tls="tls:{enabled:true,acme:{domain:[\"$is_anytls_domain\"]}}"
+                    # sing-box >= 1.14.0 uses certificate_provider; older uses acme
+                    is_core_major=$(echo "$is_core_ver" | cut -d. -f1)
+                    is_core_minor=$(echo "$is_core_ver" | cut -d. -f2)
+                    if [[ ${is_core_major:-0} -gt 1 || ${is_core_major:-0} -eq 1 && ${is_core_minor:-0} -ge 14 ]]; then
+                        is_anytls_tls="tls:{enabled:true,certificate_provider:{type:\"acme\",domain:[\"$is_anytls_domain\"]}}"
+                    else
+                        is_anytls_tls="tls:{enabled:true,acme:{domain:[\"$is_anytls_domain\"]}}"
+                    fi
                 fi
             else
                 # 自签证书: 默认 SNI www.bing.com + insecure, 对齐 ygkkk(argosbx) 行为
