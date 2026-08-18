@@ -1558,7 +1558,7 @@ info() {
             is_can_change=(0 1 4)
             is_info_show=(0 1 2 10 8)
             is_info_str=($is_protocol $is_anytls_domain $port $password tls)
-            is_url="anytls://$password@$is_anytls_domain:$port#chenzai666-$net-$is_anytls_domain"
+            is_url="anytls://$password@$is_anytls_domain:$port?sni=$is_anytls_domain#chenzai666-$net-$is_anytls_domain"
         else
             is_can_change=(0 1 4)
             is_insecure=1
