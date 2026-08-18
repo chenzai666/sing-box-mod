@@ -90,8 +90,12 @@ SB_PROTOCOLS="reality anytls-reality" SB_HANDSHAKE_PORT=8443 bash <(curl -Ls ...
 - 证书路径可用 `SB_CERT_FILE` / `SB_KEY_FILE` 环境变量覆盖（例如 certd 等工具签发后放置的证书）
 
 ```bash
-# 方式一：交互式添加
-sing-box add anytls [port] [password] example.com
+# 方式一：交互式添加（菜单选择证书方式）
+sing-box add anytls [port] [password]
+#   未指定域名时会弹出菜单：
+#     1. 自签证书 (SNI www.bing.com, 跳过验证)
+#     2. 域名证书 (复用 /etc/ssl 或 ACME 申请) → 输入域名
+sing-box add anytls [port] [password] example.com   # 直接传域名证书，跳过询问
 
 # 方式二：环境变量一键安装（优先复用 /etc/ssl 证书，无则 ACME 申请）
 SB_ANYTLS_DOMAIN=example.com bash <(curl -Ls .../install.sh)
@@ -101,7 +105,7 @@ SB_ANYTLS_DOMAIN=example.com SB_CERT_FILE=/etc/ssl/cert.crt SB_KEY_FILE=/etc/ssl
   bash <(curl -Ls .../install.sh)
 ```
 
-`sing-box info` / `change` 流程可正确识别三种证书模式（ACME 域名 / 外部证书 / 自签），展示与修改不受影响。
+`sing-box info` / `change` 流程可正确识别三种证书模式（ACME 域名 / 外部证书 / 自签），展示与修改不受影响。批量安装（`SB_ANYTLS`）默认自签，不会弹出询问。
 
 ## 安装
 
@@ -131,6 +135,7 @@ bash install.sh
 | 批量安装 | 无 | `SB_PROTOCOLS` / `SB_ANYTLS` / `SB_ANYTLS_REALITY` |
 | Reality 伪装端口 | 固定 443 | `SB_HANDSHAKE_PORT` 可配 |
 | anytls 真域名证书 | 仅 ACME 申请 | 优先复用 `/etc/ssl` 已有证书（`SB_ANYTLS_DOMAIN`） |
+| anytls 证书方式选择 | 无，只能命令行传域名 | 交互式菜单选择 自签 / 域名证书 |
 
 ## 原版特性
 

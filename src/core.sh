@@ -257,6 +257,11 @@ ask() {
         is_opt_msg="\n请选择协议:\n"
         is_ask_set=is_new_protocol
         ;;
+    set_anytls_cert)
+        is_tmp_list=("自签证书(SNI www.bing.com, 跳过验证)" "域名证书(复用 /etc/ssl 或 ACME 申请)")
+        is_opt_msg="\n请选择 AnyTLS 证书方式:\n"
+        is_ask_set=is_anytls_cert_mode
+        ;;
     set_change_list)
         is_tmp_list=()
         for v in ${is_can_change[@]}; do
@@ -1035,6 +1040,17 @@ add() {
         [[ $is_use_servername ]] && is_servername=$is_use_servername
         [[ $is_use_socks_user ]] && is_socks_user=$is_use_socks_user
         [[ $is_use_socks_pass ]] && is_socks_pass=$is_use_socks_pass
+    fi
+
+    # anytls 交互: 选择自签证书或域名证书 (复用 /etc/ssl, 无则 ACME 申请)
+    if [[ ${is_new_protocol,,} == 'anytls' && ! $is_anytls_domain && ! $is_change && ! $is_gen && ! $is_batch_install ]]; then
+        ask set_anytls_cert
+        if [[ $is_anytls_cert_mode == *域名* ]]; then
+            ask string is_anytls_domain "请输入域名:"
+            [[ ! $(is_test domain "$is_anytls_domain") ]] && {
+                err "($is_anytls_domain) 不是一个有效的域名. $is_err_tips"
+            }
+        fi
     fi
 
     # anytls with domain (ACME TLS)
