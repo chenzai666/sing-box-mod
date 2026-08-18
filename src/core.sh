@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Reality 伪装目标端口 (可通过环境变量 SB_HANDSHAKE_PORT 覆盖, 默认 443)
+is_handshake_port=${SB_HANDSHAKE_PORT:-443}
+
 protocol_list=(
     TUIC
     Trojan
@@ -161,9 +164,20 @@ get_port() {
 }
 
 get_pbk() {
-    is_tmp_pbk=($($is_core_bin generate reality-keypair | sed 's/.*://'))
+    is_tmp_pbk=($($is_core_bin generate reality-keypair 2>/dev/null | awk -F': ' '{print $2}' | tr -d ' \r'))
     is_public_key=${is_tmp_pbk[1]}
     is_private_key=${is_tmp_pbk[0]}
+    # 解析失败兜底重试一次
+    [[ ! $is_public_key || ! $is_private_key ]] && {
+        is_tmp_pbk=($($is_core_bin generate reality-keypair 2>/dev/null | tr -d ' \r' | cut -d: -f2-))
+        is_public_key=${is_tmp_pbk[1]}
+        is_private_key=${is_tmp_pbk[0]}
+    }
+}
+
+# 生成 4 字节 (8 位 hex) short_id, 与主流客户端兼容性最佳
+get_short_id() {
+    is_short_id=$($is_core_bin generate rand 4 --hex 2>/dev/null || openssl rand -hex 4)
 }
 
 show_list() {
@@ -364,7 +378,7 @@ create() {
             create caddy $net
         }
         # restart core
-        manage restart &
+        [[ ! $is_batch_install ]] && manage restart &
         ;;
     client)
         is_tls=tls
@@ -653,7 +667,7 @@ change() {
         # new short_id
         is_new_short_id=$3
         [[ ! $is_reality ]] && err "($is_config_file) 不支持更改 Short ID."
-        [[ $is_auto || ! $is_new_short_id ]] && is_new_short_id=$($is_core_bin generate rand 8 --hex 2>/dev/null || openssl rand -hex 16)
+        [[ $is_auto || ! $is_new_short_id ]] && get_short_id && is_new_short_id=$is_short_id
         [[ ! $is_new_short_id ]] && ask string is_new_short_id "请输入新的 Short ID (留空随机生成):"
         is_tmp_json=$is_conf_dir/$is_config_file-$uuid
         cp -f $is_conf_dir/$is_config_file $is_tmp_json
@@ -670,7 +684,7 @@ change() {
         is_short_id=$is_new_short_id
         # 重新生成 URL
         if [[ $is_protocol == "anytls" ]]; then
-            is_url="anytls://$password@$is_addr:$port/?security=reality&sni=$is_servername&fp=chrome&pbk=$is_public_key&sid=$is_short_id#chenzai666-anytls-reality-$is_addr"
+            is_url="anytls://$password@$is_addr:$port?security=reality&sni=$is_servername&fp=chrome&pbk=$is_public_key&sid=$is_short_id#chenzai666-anytls-reality-$is_addr"
         else
             is_url="$is_protocol://$uuid@$is_addr:$port?encryption=none&security=reality&flow=$is_flow&type=$is_net_type&sni=$is_servername&pbk=$is_public_key&fp=chrome&sid=$is_short_id#chenzai666-$net-$is_addr"
         fi
@@ -1250,9 +1264,9 @@ get() {
             [[ ! $password ]] && password=$uuid
             [[ ! $is_servername ]] && is_servername=$is_random_servername
             [[ ! $is_private_key ]] && get_pbk
-            [[ ! $is_short_id ]] && is_short_id=$($is_core_bin generate rand 8 --hex 2>/dev/null || openssl rand -hex 16)
+            [[ ! $is_short_id ]] && get_short_id
             is_users="users:[{password:\"$password\"}]"
-            json_str="$is_users,padding_scheme:[],tls:{enabled:true,server_name:\"$is_servername\",reality:{enabled:true,handshake:{server:\"$is_servername\",server_port:443},private_key:\"$is_private_key\",short_id:[\"$is_short_id\"]}}"
+            json_str="$is_users,padding_scheme:[],tls:{enabled:true,server_name:\"$is_servername\",reality:{enabled:true,handshake:{server:\"$is_servername\",server_port:$is_handshake_port},private_key:\"$is_private_key\",short_id:[\"$is_short_id\"]}}"
             ;;
         anytls*)
             net=anytls
@@ -1261,14 +1275,17 @@ get() {
             is_users="users:[{password:\"$password\"}]"
             if [[ $is_anytls_domain ]]; then
                 # sing-box >= 1.14.0 uses certificate_provider; older uses acme
+                is_core_major=$(echo "$is_core_ver" | cut -d. -f1)
                 is_core_minor=$(echo "$is_core_ver" | cut -d. -f2)
-                if [[ ${is_core_minor:-0} -ge 14 ]]; then
+                if [[ ${is_core_major:-0} -gt 1 || ${is_core_major:-0} -eq 1 && ${is_core_minor:-0} -ge 14 ]]; then
                     is_anytls_tls="tls:{enabled:true,certificate_provider:{type:\"acme\",domain:[\"$is_anytls_domain\"]}}"
                 else
                     is_anytls_tls="tls:{enabled:true,acme:{domain:[\"$is_anytls_domain\"]}}"
                 fi
             else
+                # 自签证书: 默认 SNI www.bing.com + insecure, 对齐 ygkkk(argosbx) 行为
                 is_anytls_tls="${is_tls_json/alpn\:\[\"h3\"\],/}"
+                is_anytls_tls="${is_anytls_tls/tls:{enabled:true/tls:{enabled:true,server_name:\"www.bing.com\",insecure:true}"
             fi
             json_str="$is_users,$is_anytls_tls"
             ;;
@@ -1301,8 +1318,8 @@ get() {
             net=reality
             [[ ! $is_servername ]] && is_servername=$is_random_servername
             [[ ! $is_private_key ]] && get_pbk
-            [[ ! $is_short_id ]] && is_short_id=$($is_core_bin generate rand 8 --hex 2>/dev/null || openssl rand -hex 16)
-            is_json_add="tls:{enabled:true,server_name:\"$is_servername\",reality:{enabled:true,handshake:{server:\"$is_servername\",server_port:443},private_key:\"$is_private_key\",short_id:[\"$is_short_id\"]}}"
+            [[ ! $is_short_id ]] && get_short_id
+            is_json_add="tls:{enabled:true,server_name:\"$is_servername\",reality:{enabled:true,handshake:{server:\"$is_servername\",server_port:$is_handshake_port},private_key:\"$is_private_key\",short_id:[\"$is_short_id\"]}}"
             [[ $is_lower =~ "http" ]] && {
                 is_json_add="$is_json_add,transport:{type:\"http\"}"
             } || {
@@ -1505,7 +1522,7 @@ info() {
             is_info_show=(0 1 2 10 16 4 8 17 18 22)
             is_net_type=tcp
             is_info_str=($is_protocol $is_addr $port $password $is_servername $is_net_type reality chrome $is_public_key $is_short_id)
-            is_url="anytls://$password@$is_addr:$port/?security=reality&sni=$is_servername&fp=chrome&pbk=$is_public_key&sid=$is_short_id#chenzai666-anytls-reality-$is_addr"
+            is_url="anytls://$password@$is_addr:$port?security=reality&sni=$is_servername&fp=chrome&pbk=$is_public_key&sid=$is_short_id#chenzai666-anytls-reality-$is_addr"
         elif [[ $is_anytls_domain ]]; then
             is_can_change=(0 1 4)
             is_info_show=(0 1 2 10 8)
@@ -1514,9 +1531,10 @@ info() {
         else
             is_can_change=(0 1 4)
             is_insecure=1
-            is_info_show=(0 1 2 10 8 20)
-            is_info_str=($is_protocol $is_addr $port $password tls true)
-            is_url="anytls://$password@$is_addr:$port?allowInsecure=1#chenzai666-$net-$is_addr"
+            is_anytls_sni=www.bing.com
+            is_info_show=(0 1 2 10 8 16 20)
+            is_info_str=($is_protocol $is_addr $port $password tls www.bing.com true)
+            is_url="anytls://$password@$is_addr:$port?sni=www.bing.com&insecure=1&allowInsecure=1#chenzai666-$net-$is_addr"
         fi
         ;;
     direct)

@@ -597,9 +597,33 @@ main() {
     # create condf dir
     mkdir -p $is_conf_dir
 
+    # init is_core_ver & self-signed tls cert
+    # (原版 init.sh 中完成, install 流程不走 init.sh, 装 anytls 前必须补齐)
+    is_core_ver=$($is_core_bin version | head -n1 | cut -d " " -f3)
+    is_tls_cer=$is_core_dir/bin/tls.cer
+    is_tls_key=$is_core_dir/bin/tls.key
+    [[ ! -f $is_tls_cer || ! -f $is_tls_key ]] && {
+        is_tls_tmp=${is_tls_key/key/tmp}
+        $is_core_bin generate tls-keypair tls -m 456 >$is_tls_tmp
+        awk '/BEGIN PRIVATE KEY/,/END PRIVATE KEY/' $is_tls_tmp >$is_tls_key
+        awk '/BEGIN CERTIFICATE/,/END CERTIFICATE/' $is_tls_tmp >$is_tls_cer
+        rm $is_tls_tmp
+    }
+
     load core.sh
-    # create a reality config
-    add reality
+    # 默认安装 reality; 可通过环境变量额外安装 anytls / anytls-reality
+    # 用法: SB_ANYTLS_REALITY=1 bash <(curl -Ls ...)
+    #       或 SB_PROTOCOLS="reality anytls-reality" 自定义协议列表 (空格分隔)
+    #       或 SB_HANDSHAKE_PORT=8443 自定义 Reality 伪装端口
+    is_batch_install=1
+    for p in ${SB_PROTOCOLS:-reality}; do
+        add $p auto
+    done
+    [[ $SB_ANYTLS ]] && add anytls auto
+    [[ $SB_ANYTLS_REALITY ]] && add anytls-reality auto
+    is_batch_install=
+    # unified restart after batch install
+    manage restart &
     # wait for background tasks (e.g., OpenRC service start)
     wait
     # remove tmp dir and exit.
