@@ -159,7 +159,8 @@ show_help() {
     echo -e "  -l, --local-install             本地获取安装脚本, 使用当前目录"
     echo -e "  -p, --proxy <addr>              使用代理下载, e.g., -p http://127.0.0.1:7890"
     echo -e "  -v, --core-version <ver>        自定义 $is_core_name 版本, e.g., -v v1.8.13"
-    echo -e "  -h, --help                      显示此帮助界面\n"
+    echo -e "  -h, --help                      显示此帮助界面"
+    echo -e "  update-sh                       已安装时仅更新脚本(保留核心与配置)\n"
 
     exit 0
 }
@@ -445,8 +446,43 @@ exit_and_del_tmpdir() {
     exit
 }
 
+# update script only, keep core & configs (bootstrap upgrade for old versions without self-update)
+update_sh_only() {
+    [[ ! -f $is_sh_bin || ! -d $is_sh_dir ]] && {
+        err "脚本未安装, 请直接执行安装命令."
+    }
+    msg warn "更新脚本 (仅更新 ${is_sh_dir}, 不影响核心与配置)..."
+    # download latest script package
+    download sh
+    [[ ! -f $is_sh_ok ]] && err "脚本包下载失败."
+    # backup current script (same layout as core.sh update_script)
+    local old_ver=$(grep -E -o 'is_sh_ver=v[0-9.]+' $is_sh_dir/$is_core.sh 2>/dev/null | head -1 | cut -d= -f2)
+    [[ ! $old_ver ]] && old_ver=old
+    local bak=$is_sh_dir/backup-$old_ver
+    rm -rf $bak
+    mkdir -p $bak
+    cp -rf $is_sh_dir/src $is_sh_dir/$is_core.sh $bak/
+    # overwrite script files
+    tar zxf $is_sh_ok -C $is_sh_dir
+    # re-link wrapper
+    ln -sf $is_sh_dir/$is_core.sh $is_sh_bin
+    ln -sf $is_sh_dir/$is_core.sh ${is_sh_bin/$is_core/sb}
+    chmod +x $is_sh_bin ${is_sh_bin/$is_core/sb}
+    local new_ver=$(grep -E -o 'is_sh_ver=v[0-9.]+' $is_sh_dir/$is_core.sh 2>/dev/null | head -1 | cut -d= -f2)
+    rm -rf $tmpdir
+    _green "\n脚本更新完成: ${old_ver} -> ${new_ver:-?}"
+    msg "备份目录: $bak"
+    msg "如遇问题可回滚: rm -rf $is_sh_dir && mv $bak $is_sh_dir"
+}
+
 # main
 main() {
+
+    # update script only (bootstrap for old versions without self-update)
+    [[ $1 == 'update-sh' || $1 == 'update_sh' || $1 == 'update_script' ]] && {
+        update_sh_only
+        exit 0
+    }
 
     # check old version
     [[ -f $is_sh_bin && -d $is_core_dir/bin && -d $is_sh_dir && -d $is_conf_dir ]] && {

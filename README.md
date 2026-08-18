@@ -126,6 +126,14 @@ sing-box update          # 无参数: 先更新脚本, 再更新核心(一步到
 - 有新版本时**先备份**当前脚本到 `$is_sh_dir/backup-<旧版本>`，再覆盖安装，失败可随时回滚
 - 主菜单「更新 → 更新脚本」与 `sing-box U` / `update.sh` 同样走此逻辑
 
+**旧版脚本引导升级**（无 `self-update` 命令时）：
+
+```bash
+bash <(curl -Ls https://raw.githubusercontent.com/chenzai666/sing-box-mod/main/install.sh) update-sh
+```
+
+> 适用场景：服务器脚本过旧（`sb self-update` 报"无法识别"、`sb update` 只更新核心不更新脚本）。`update-sh` 仅覆盖 `$is_sh_dir` 脚本文件（自动备份旧版到 `backup-<旧版本>`），**不动 sing-box 核心与 `/etc/sing-box/conf` 配置**，升级后 `sb add anytls` 即可看到证书方式选择菜单。
+
 ## 安装
 
 ```bash
