@@ -11,7 +11,7 @@ show_help() {
         help_info=(
             "基本:"
             "   v, version                                      显示当前版本"
-            "   ip                                              返回当前主机的 IP"
+            "   ip [set <ip | domain> | clear]                  查看/设置当前主机 IP 或域名(DDNS)"
             "   pbk                                             同等于 $is_core generate reality-keypair"
             "   get-port                                        返回一个可用的端口"
             "   ss2022                                          返回一个可用于 Shadowsocks 2022 的密码\n"

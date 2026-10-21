@@ -138,17 +138,46 @@ get_uuid() {
 
 get_ip() {
     [[ $ip || $is_no_auto_tls || $is_gen || $is_dont_get_ip ]] && return
-    # 如果存在自定义 IP 配置文件，直接读取，跳过自动探测
+    # 如果存在自定义 IP/域名配置文件，直接读取，跳过自动探测
     local _custom_ip_file=$is_core_dir/custom_ip
     if [[ -f $_custom_ip_file ]]; then
         ip=$(cat $_custom_ip_file | tr -d '[:space:]')
         [[ $ip ]] && return
     fi
-    export "$(_wget -4 -qO- https://one.one.one.one/cdn-cgi/trace | grep ip=)" &>/dev/null
-    [[ ! $ip ]] && export "$(_wget -6 -qO- https://one.one.one.one/cdn-cgi/trace | grep ip=)" &>/dev/null
+    # 多源探测: 先 IPv4 再 IPv6, 每个源 8s 超时 (避免单点故障/无超时挂起)
+    local _ip _url _ver
+    for _ver in -4 -6; do
+        for _url in \
+            https://one.one.one.one/cdn-cgi/trace \
+            https://api.ipify.org \
+            https://ifconfig.me \
+            https://icanhazip.com; do
+            if [[ $_url == *cdn-cgi/trace ]]; then
+                _ip=$(_wget $_ver -qO- -T 8 -t 1 "$_url" 2>/dev/null | awk -F= '/^ip=/{print $2; exit}' | tr -d '[:space:]')
+            else
+                _ip=$(_wget $_ver -qO- -T 8 -t 1 "$_url" 2>/dev/null | tr -d '[:space:]')
+            fi
+            if [[ $(is_test ip "$_ip") ]]; then
+                ip=$_ip
+                export ip
+                return
+            fi
+        done
+    done
     [[ ! $ip ]] && {
         err "获取服务器 IP 失败.."
     }
+}
+
+# 解析域名到 IP (DoH), 用于自定义地址为域名(DDNS)时的解析比对; 失败返回空
+dns_resolve() {
+    local _name=$1 _type=a
+    [[ $2 == 6 ]] && _type=aaaa
+    local _json=$(_wget -qO- -T 8 -t 1 --header="accept: application/dns-json" \
+        "https://one.one.one.one/dns-query?name=$_name&type=$_type" 2>/dev/null)
+    local _out=$(jq -r '.Answer[]? | select(.type == 1 or .type == 28) | .data' <<<"$_json" 2>/dev/null | head -1)
+    [[ ! $_out ]] && _out=$(grep -E -o '([0-9]{1,3}\.){3}[0-9]{1,3}' <<<"$_json" | head -1)
+    echo $_out
 }
 
 get_port() {
@@ -209,6 +238,9 @@ is_test() {
         ;;
     domain)
         echo $2 | grep -E -i '^\w(\w|-|\.)?+\.\w+$'
+        ;;
+    ip)
+        echo $2 | grep -E -i '^([0-9]{1,3}\.){3}[0-9]{1,3}$|^[0-9a-f]{0,4}(:[0-9a-f]{0,4}){2,}$'
         ;;
     path)
         echo $2 | grep -E -i '^\/\w(\w|-|\/)?+\w$'
@@ -1375,15 +1407,24 @@ get() {
     host-test) # test host dns record; for auto *tls required.
         [[ $is_no_auto_tls || $is_gen || $is_dont_test_host ]] && return
         get_ip
+        # 自定义地址可能是域名(DDNS), 先解析成真实 IP 再比对
+        local _cmp_ip=$ip
+        if [[ ! $(is_test ip $ip) ]]; then
+            _cmp_ip=$(dns_resolve $ip)
+            [[ ! $_cmp_ip ]] && {
+                _yellow "\n(自定义地址为域名 ($ip), 无法解析, 跳过解析比对)"
+                return
+            }
+        fi
         get ping
-        if [[ ! $(grep $ip <<<$is_host_dns) ]]; then
-            msg "\n请将 ($(_red_bg $host)) 解析到 ($(_red_bg $ip))"
+        if [[ ! $(grep $_cmp_ip <<<$is_host_dns) ]]; then
+            msg "\n请将 ($(_red_bg $host)) 解析到 ($(_red_bg $_cmp_ip))"
             msg "\n如果使用 Cloudflare, 在 DNS 那; 关闭 (Proxy status / 代理状态), 即是 (DNS only / 仅限 DNS)"
             ask string y "我已经确定解析 [y]:"
             get ping
-            if [[ ! $(grep $ip <<<$is_host_dns) ]]; then
+            if [[ ! $(grep $_cmp_ip <<<$is_host_dns) ]]; then
                 _cyan "\n测试结果: $is_host_dns"
-                err "域名 ($host) 没有解析到 ($ip)"
+                err "域名 ($host) 没有解析到 ($_cmp_ip)"
             fi
         fi
         ;;
@@ -1903,15 +1944,30 @@ main() {
         ;;
     ip)
         if [[ $2 == 'set' && $3 ]]; then
-            echo "$3" > $is_core_dir/custom_ip
-            _green "\n已设置自定义 IP: $3 (保存至 $is_core_dir/custom_ip)\n"
+            local _set_addr=$3
+            if [[ $(is_test ip $_set_addr) ]]; then
+                echo "$_set_addr" > $is_core_dir/custom_ip
+                _green "\n已设置自定义 IP: $_set_addr (保存至 $is_core_dir/custom_ip)\n"
+            elif [[ $(is_test domain $_set_addr) ]]; then
+                echo "$_set_addr" > $is_core_dir/custom_ip
+                _green "\n已设置自定义域名 (DDNS): $_set_addr (保存至 $is_core_dir/custom_ip)\n"
+                _yellow "节点地址将使用该域名, 请确保其解析始终指向本机.\n"
+            else
+                err "($_set_addr) 不是一个有效的 IP 或域名, 示例: sb ip set 1.2.3.4 或 sb ip set my.ddns.com"
+            fi
         elif [[ $2 == 'clear' || $2 == 'del' ]]; then
             rm -f $is_core_dir/custom_ip
-            _green "\n已清除自定义 IP, 将恢复自动探测.\n"
+            _green "\n已清除自定义 IP/域名, 将恢复自动探测.\n"
         else
             get_ip
             msg $ip
-            [[ -f $is_core_dir/custom_ip ]] && _yellow "(来自自定义配置文件: $is_core_dir/custom_ip)"
+            [[ -f $is_core_dir/custom_ip ]] && {
+                if [[ $(is_test ip $ip) ]]; then
+                    _yellow "(来自自定义配置文件: $is_core_dir/custom_ip)"
+                else
+                    _yellow "(来自自定义配置文件的域名(DDNS): $is_core_dir/custom_ip)"
+                fi
+            }
         fi
         ;;
     in | import)

@@ -543,7 +543,12 @@ main() {
     [[ $custom_ip ]] && {
         mkdir -p $is_core_dir
         echo "$custom_ip" >$is_core_dir/custom_ip
-        msg warn "使用自定义服务器 IP: ${yellow}$custom_ip${none}"
+        if [[ $custom_ip =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ || $custom_ip =~ : ]]; then
+            msg warn "使用自定义服务器 IP: ${yellow}$custom_ip${none}"
+        else
+            msg warn "使用自定义服务器域名 (DDNS): ${yellow}$custom_ip${none}"
+            msg warn "请确保该域名解析始终指向本机."
+        fi
     }
 
     # jq
