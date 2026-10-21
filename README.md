@@ -14,15 +14,20 @@ bash install.sh -i 2001:db8::1       # IPv6
 bash install.sh -i 1.2.3.4 -v v1.11.0 -p http://127.0.0.1:7890
 ```
 
-### 2. 持久化自定义 IP（`sing-box ip set/clear`）
+### 2. 持久化自定义 IP / 域名（`sing-box ip set/clear`）
 
-安装后修改配置时，IP 会被自动探测覆盖。定制版支持将 IP 持久化到配置文件：
+安装后修改配置时，IP 会被自动探测覆盖。定制版支持将 IP（或域名）持久化到配置文件：
 
 ```bash
 sing-box ip set 1.2.3.4          # 设置固定 IP
+sing-box ip set my.ddns.com      # 设置域名（DDNS，动态 IP 机器适用）
 sing-box ip clear                 # 恢复自动探测
-sing-box ip                        # 查看当前 IP
+sing-box ip                        # 查看当前 IP / 域名
 ```
+
+- 输入值会做校验，既不是 IP 也不是域名时报错
+- 填域名时，节点地址与分享链接都使用该域名，**DDNS 更新 IP 后无需改动配置**
+- 域名解析校验（`host-test`）会自动把该域名解析成真实 IP 再比对；解析不出来时跳过校验，不阻断安装
 
 ### 3. Reality Short ID 随机生成
 
@@ -134,6 +139,21 @@ bash <(curl -Ls https://raw.githubusercontent.com/chenzai666/sing-box-mod/main/i
 
 > 适用场景：服务器脚本过旧（`sb self-update` 报"无法识别"、`sb update` 只更新核心不更新脚本）。`update-sh` 仅覆盖 `$is_sh_dir` 脚本文件（自动备份旧版到 `backup-<旧版本>`），**不动 sing-box 核心与 `/etc/sing-box/conf` 配置**，升级后 `sb add anytls` 即可看到证书方式选择菜单。
 
+### 10. IP 探测多源化（`get_ip`）
+
+原版获取服务器 IP 只依赖 Cloudflare `cdn-cgi/trace` **单源**，且请求无超时：Cloudflare 不通就直接报错退出，网络异常时还可能长时间卡住。定制版改为多源轮询：
+
+| 顺序 | 数据源 | 解析方式 |
+|---|---|---|
+| 1 | `one.one.one.one/cdn-cgi/trace` | 取 `ip=` 字段 |
+| 2 | `api.ipify.org` | 直接取返回体 |
+| 3 | `ifconfig.me` | 直接取返回体 |
+| 4 | `icanhazip.com` | 直接取返回体 |
+
+- 先试 IPv4（`-4`）后试 IPv6（`-6`），每个请求 `-T 8` 超时、`-t 1` 不重试
+- 返回值做 IP 格式校验（IPv4 / IPv6），非 IP 结果丢弃并继续下一源
+- 全部失败才报错退出；已设置自定义 IP / 域名时直接短路，不发起探测
+
 ## 安装
 
 ```bash
@@ -153,7 +173,9 @@ bash install.sh
 | 功能 | 上游原版 | 本定制版 |
 |------|------------|---------|
 | 安装时指定 IP | 不支持 | `-i <IP>` |
-| IP 持久化 | 无，每次探测覆盖 | `sing-box ip set` |
+| IP 持久化 | 无，每次探测覆盖 | `sing-box ip set`（支持 IP 或域名） |
+| DDNS 域名地址 | 无 | `sing-box ip set my.ddns.com`，校验时自动解析比对 |
+| IP 探测 | Cloudflare 单源、无超时 | 4 源轮询 + 每源 8s 超时，先 IPv4 后 IPv6 |
 | Reality short_id | 硬编码空字符串 `[""]` | 随机 4 字节 hex |
 | 更改 short_id | 无 | `sing-box change 13` |
 | anytls-reality | 无 | `sing-box add anytls-reality`，菜单序号 21 |
