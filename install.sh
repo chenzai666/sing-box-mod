@@ -175,6 +175,8 @@ install_pkg() {
         pkg=$(echo $cmd_not_found | sed 's/,/ /g')
         msg warn "安装依赖包 >${pkg}"
         if [[ $cmd =~ apk ]]; then
+            # apk 下载也走代理 (-p), 否则官方源不通时会无限挂起
+            [[ $proxy ]] && export http_proxy=$proxy https_proxy=$proxy
             apk update
             apk add --no-cache $pkg
         else
@@ -186,7 +188,8 @@ install_pkg() {
                 else
                     $cmd update -y &>/dev/null
                 fi
-                $cmd install -y $pkg &>/dev/null
+                # 第二次尝试显示输出, 便于定位源不通/依赖冲突等真实原因
+                $cmd install -y $pkg
             fi
         fi
         [[ $? == 0 ]] && >$is_pkg_ok
